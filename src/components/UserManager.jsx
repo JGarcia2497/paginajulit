@@ -216,13 +216,15 @@ function LinkClientModal({ user, onClose, onLinked }) {
 }
 
 export default function UserManager() {
-  const { userProfile } = useAuth();
+  const { userProfile, currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filterRole, setFilterRole] = useState('all');
   const [linkingUser, setLinkingUser] = useState(null);
   const [clients, setClients] = useState([]);
+  const [notice, setNotice] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     loadUsers();
@@ -298,6 +300,31 @@ export default function UserManager() {
     }
   };
 
+  const handleDeleteUser = async (user) => {
+    const nombre = user.fullName || user.email || 'esta cuenta';
+    const aviso = user.clientId
+      ? `\n\nSu ficha de deportista (${nombreDeFicha(user.clientId)}) NO se borra: queda libre con todo su historial.`
+      : '';
+    if (!window.confirm(`¿Eliminar definitivamente la cuenta de ${nombre}?\n\nNo podrá volver a entrar con ella. Esta acción no se puede deshacer.${aviso}`)) return;
+
+    const userId = user.uid || user.id;
+    setError(null);
+    setNotice(null);
+    setDeletingId(userId);
+    try {
+      const { fullyDeleted } = await storage.deleteUser(user);
+      setNotice(fullyDeleted
+        ? `Cuenta de ${nombre} eliminada.`
+        : `Se ha eliminado el perfil de ${nombre}, pero su acceso sigue existiendo en Firebase Authentication porque la función "deleteUserFn" aún no está desplegada. Despliégala o borra el acceso desde la consola de Firebase.`);
+      loadUsers();
+    } catch (err) {
+      console.error(err);
+      setError('No se pudo eliminar la cuenta: ' + err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const filteredUsers = users.filter(u => filterRole === 'all' || u.role === filterRole);
 
   if (userProfile?.role !== 'owner') {
@@ -330,6 +357,7 @@ export default function UserManager() {
       </div>
 
       {error && <div className="alert error">{error}</div>}
+      {notice && <div className="alert success">{notice}</div>}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '2rem' }}>Cargando usuarios...</div>
@@ -410,6 +438,18 @@ export default function UserManager() {
                             Vincular Ficha
                           </button>
                         )
+                      )}
+
+                      {user.role !== 'owner' && (user.uid || user.id) !== currentUser?.uid && (
+                        <button
+                          className="el__btn el__btn--ghost el__btn--small"
+                          onClick={() => handleDeleteUser(user)}
+                          disabled={deletingId === (user.uid || user.id)}
+                          style={{ color: 'var(--red)' }}
+                          title="Eliminar la cuenta definitivamente"
+                        >
+                          {deletingId === (user.uid || user.id) ? 'Eliminando…' : '🗑 Eliminar'}
+                        </button>
                       )}
                     </div>
                   </td>

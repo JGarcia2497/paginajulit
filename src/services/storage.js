@@ -244,6 +244,39 @@ export const storage = {
     return true;
   },
 
+  // Elimina una cuenta. Lo hace la Cloud Function deleteUserFn, que borra
+  // también el acceso en Authentication. Si esa función todavía no está
+  // desplegada, se hace lo que el frontend sí puede (liberar la ficha y
+  // borrar el perfil) y se devuelve fullyDeleted: false para avisar de que
+  // el acceso sigue existiendo en Firebase Authentication.
+  deleteUser: async (user) => {
+    if (sessionService.getRole() !== 'owner') {
+      throw new Error('Solo el owner puede eliminar usuarios.');
+    }
+    const userId = String(user.uid || user.id);
+    if (userId === String(sessionService.getUserId())) {
+      throw new Error('No puedes eliminar tu propia cuenta.');
+    }
+    if (user.role === 'owner') {
+      throw new Error('Quita primero el rol de owner a esta cuenta.');
+    }
+
+    try {
+      await functionsService.call('deleteUserFn', { userId });
+      return { fullyDeleted: true };
+    } catch (err) {
+      const noDesplegada = ['functions/not-found', 'functions/internal', 'functions/unavailable'].includes(err.code)
+        && !/No se pudo eliminar el acceso/.test(err.message);
+      if (!noDesplegada) throw err;
+    }
+
+    if (user.clientId) {
+      await storage.unlinkUserFromClient(userId, user.clientId);
+    }
+    await firestoreService.deleteDocument('users', userId);
+    return { fullyDeleted: false };
+  },
+
   // Deshace la vinculación por ambos lados.
   unlinkUserFromClient: async (userId, clientId) => {
     if (sessionService.getRole() !== 'owner') {

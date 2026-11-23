@@ -2,7 +2,11 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../config/firebase';
 
 const normalizeError = (error) => {
-  return new Error(error.message || 'Se produjo un error en el servidor. Inténtelo más tarde.');
+  const normalized = new Error(error.message || 'Se produjo un error en el servidor. Inténtelo más tarde.');
+  // Se conserva el código (p. ej. 'functions/permission-denied') para que
+  // quien llama pueda distinguir un error real de una función no desplegada.
+  normalized.code = error.code;
+  return normalized;
 };
 
 export const functionsService = {
