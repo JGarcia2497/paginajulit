@@ -15,7 +15,7 @@ export function useAuth() {
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
-  const [authState, setAuthState] = useState('loading'); // 'loading', 'pending-profile', 'ready', 'error'
+  const [authState, setAuthState] = useState('loading'); // 'loading', 'pending-profile', 'ready', 'no-profile', 'error'
 
   const login = authService.login;
   const loginWithGoogle = authService.loginWithGoogle;
@@ -25,10 +25,19 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let unsubscribeProfile = null;
+    // Si tras unos segundos sigue sin existir users/{uid}, la cuenta se ha
+    // eliminado desde Gestión de Usuarios: se avisa en vez de dejar la
+    // pantalla de carga para siempre. La espera deja margen al registro,
+    // que crea el perfil justo después de crear el usuario.
+    let noProfileTimer = null;
+    const clearNoProfileTimer = () => {
+      if (noProfileTimer) { clearTimeout(noProfileTimer); noProfileTimer = null; }
+    };
 
     const unsubscribeAuth = authService.onAuthStateChanged(async (user) => {
       setCurrentUser(user);
-      
+      clearNoProfileTimer();
+
       if (unsubscribeProfile) {
         unsubscribeProfile();
         unsubscribeProfile = null;
@@ -90,6 +99,7 @@ export function AuthProvider({ children }) {
           doc(db, 'users', user.uid),
           (docSnap) => {
             if (docSnap.exists()) {
+              clearNoProfileTimer();
               const profile = docSnap.data();
               setUserProfile(profile);
               sessionService.setSession(user, profile.organizationId, profile.role, profile.clientId || null);
@@ -99,6 +109,9 @@ export function AuthProvider({ children }) {
               setUserProfile(null);
               sessionService.setSession(user, null, null);
               setAuthState('pending-profile');
+              if (!noProfileTimer) {
+                noProfileTimer = setTimeout(() => setAuthState('no-profile'), 6000);
+              }
             }
           },
           (error) => {
@@ -114,6 +127,7 @@ export function AuthProvider({ children }) {
     });
 
     return () => {
+      clearNoProfileTimer();
       unsubscribeAuth();
       if (unsubscribeProfile) unsubscribeProfile();
     };
@@ -134,6 +148,15 @@ export function AuthProvider({ children }) {
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#09090b', color: '#fff' }}>
         <Spinner size={32} />
         <span style={{ marginLeft: '12px' }}>Cargando sesión...</span>
+      </div>
+    );
+  }
+
+  if (authState === 'no-profile') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#09090b', color: '#fff', textAlign: 'center', padding: '0 16px' }}>
+        <p>Esta cuenta ya no tiene acceso a la app. Si crees que es un error, habla con tu entrenador.</p>
+        <button onClick={logout} style={{ padding: '8px 16px', cursor: 'pointer' }}>Cerrar sesión</button>
       </div>
     );
   }

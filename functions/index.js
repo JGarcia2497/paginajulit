@@ -1,7 +1,6 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
 import { createHash, randomUUID } from 'crypto';
 
 initializeApp();
@@ -377,91 +376,6 @@ export const saveResultFn = onCall(async (request) => {
         clientId: result.clientId
       }
     });
-  });
-
-  return { success: true };
-});
-
-// ==========================================
-// GESTIÓN DE USUARIOS
-// ==========================================
-
-/**
- * deleteUserFn
- * Elimina una cuenta por completo: el acceso en Firebase Authentication, su
- * perfil users/{uid} y su vínculo con la ficha de deportista. La ficha (y
- * todo su historial de entrenamientos) NO se borra: solo queda libre, como
- * al pulsar "Desvincular".
- *
- * Borrar el acceso de Authentication solo puede hacerse con privilegios de
- * servidor, por eso esto vive aquí y no en el frontend.
- */
-export const deleteUserFn = onCall(async (request) => {
-  const { auth, data } = request;
-  if (!auth) throw new HttpsError('unauthenticated', 'User must be authenticated');
-
-  const userId = data?.userId ? String(data.userId) : '';
-  if (!userId) throw new HttpsError('invalid-argument', 'userId is required');
-
-  const profile = await getUserProfile(auth.uid);
-  if (!profile || profile.role !== 'owner' || profile.status !== 'active') {
-    throw new HttpsError('permission-denied', 'Solo un owner puede eliminar usuarios.');
-  }
-  if (userId === auth.uid) {
-    throw new HttpsError('failed-precondition', 'No puedes eliminar tu propia cuenta.');
-  }
-
-  const userRef = db.collection('users').doc(userId);
-  const target = await userRef.get();
-  const targetData = target.exists ? target.data() : null;
-
-  // Un owner no se borra directamente: primero hay que quitarle el rol.
-  // Así nunca se puede dejar la organización sin nadie que la gestione.
-  if (targetData?.role === 'owner') {
-    throw new HttpsError('failed-precondition', 'Quita primero el rol de owner a esta cuenta.');
-  }
-  if (targetData?.organizationId && targetData.organizationId !== profile.organizationId) {
-    throw new HttpsError('permission-denied', 'Esta cuenta pertenece a otra organización.');
-  }
-
-  // 1. Liberar la ficha vinculada, devolviéndole su email de contacto original
-  const clientId = targetData?.clientId ? String(targetData.clientId) : null;
-  if (clientId) {
-    const clientRef = db.collection('clients').doc(clientId);
-    const ficha = await clientRef.get();
-    if (ficha.exists && String(ficha.data().linkedUserId || '') === userId) {
-      const cambios = { linkedUserId: null, updatedAt: FieldValue.serverTimestamp() };
-      if (ficha.data().emailBeforeLink !== undefined) {
-        cambios.email = ficha.data().emailBeforeLink || '';
-        cambios.emailBeforeLink = null;
-      }
-      await clientRef.update(cambios);
-    }
-  }
-
-  // 2. Borrar el acceso. Si ya no existía en Authentication, se sigue igual.
-  try {
-    await getAuth().deleteUser(userId);
-  } catch (err) {
-    if (err?.code !== 'auth/user-not-found') {
-      throw new HttpsError('internal', 'No se pudo eliminar el acceso de la cuenta.');
-    }
-  }
-
-  // 3. Borrar el perfil y dejar constancia
-  await userRef.delete();
-  await db.collection('audit_logs').add({
-    orgId: profile.organizationId,
-    action: 'USER_DELETED',
-    entityId: userId,
-    entityType: 'user',
-    actorId: auth.uid,
-    createdAt: FieldValue.serverTimestamp(),
-    details: {
-      email: targetData?.email || null,
-      role: targetData?.role || null,
-      clientId
-    }
   });
 
   return { success: true };

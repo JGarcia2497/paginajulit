@@ -305,17 +305,15 @@ export default function UserManager() {
     const aviso = user.clientId
       ? `\n\nSu ficha de deportista (${nombreDeFicha(user.clientId)}) NO se borra: queda libre con todo su historial.`
       : '';
-    if (!window.confirm(`¿Eliminar definitivamente la cuenta de ${nombre}?\n\nNo podrá volver a entrar con ella. Esta acción no se puede deshacer.${aviso}`)) return;
+    if (!window.confirm(`¿Eliminar la cuenta de ${nombre}?\n\nPerderá el acceso a la app. Esta acción no se puede deshacer.${aviso}`)) return;
 
     const userId = user.uid || user.id;
     setError(null);
     setNotice(null);
     setDeletingId(userId);
     try {
-      const { fullyDeleted } = await storage.deleteUser(user);
-      setNotice(fullyDeleted
-        ? `Cuenta de ${nombre} eliminada.`
-        : `Se ha eliminado el perfil de ${nombre}, pero su acceso sigue existiendo en Firebase Authentication porque la función "deleteUserFn" aún no está desplegada. Despliégala o borra el acceso desde la consola de Firebase.`);
+      await storage.deleteUser(user);
+      setNotice(`Cuenta de ${nombre} eliminada.`);
       loadUsers();
     } catch (err) {
       console.error(err);
