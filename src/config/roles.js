@@ -3,7 +3,7 @@
  */
 
 export const OWNER_EMAILS = [
-  'agarciah10@gmail.com'
+  'julengarcia97@gmail.com'
 ];
 
 /**
